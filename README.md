@@ -59,8 +59,8 @@ make check
 
 For example, common presets might be:
 
-- `HDMI`
-- `USB-C`
+- `Main`
+- `Vertical Side Monitor`
 - `Presentation`
 - `Mirrored`
 
