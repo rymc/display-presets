@@ -10,26 +10,24 @@ enum DisplayplacerService {
     static func apply(_ profile: Profile) throws {
         let result = try runDisplayplacer(
             arguments: profile.arguments,
-            captureOutput: false,
             timeout: applyTimeout,
             timeoutMessage: "displayplacer timed out while applying the layout."
         )
 
         if result.terminationStatus != 0 {
-            throw serviceError("displayplacer failed with exit code \(result.terminationStatus).")
+            throw serviceError(failureMessage("displayplacer failed", result: result))
         }
     }
 
     static func captureCurrentArguments() throws -> [String] {
         let result = try runDisplayplacer(
             arguments: ["list"],
-            captureOutput: true,
             timeout: captureTimeout,
             timeoutMessage: "displayplacer timed out while reading the current layout."
         )
 
         guard result.terminationStatus == 0 else {
-            throw serviceError("displayplacer failed with exit code \(result.terminationStatus).")
+            throw serviceError(failureMessage("displayplacer list failed", result: result))
         }
 
         guard let text = String(data: result.output, encoding: .utf8),
@@ -54,7 +52,6 @@ enum DisplayplacerService {
 
     private static func runDisplayplacer(
         arguments: [String],
-        captureOutput: Bool,
         timeout: TimeInterval,
         timeoutMessage: String
     ) throws -> ProcessResult {
@@ -63,28 +60,26 @@ enum DisplayplacerService {
         }
 
         let process = Process()
-        let outputPipe = captureOutput ? Pipe() : nil
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
         let completed = DispatchSemaphore(value: 0)
         let outputReadGroup = DispatchGroup()
         let outputLock = NSLock()
         var capturedOutput = Data()
+        var capturedErrorOutput = Data()
 
-        if let outputPipe {
-            outputReadGroup.enter()
-            DispatchQueue.global(qos: .utility).async {
-                let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                outputLock.lock()
-                capturedOutput = data
-                outputLock.unlock()
-                outputReadGroup.leave()
-            }
+        captureData(from: outputPipe, group: outputReadGroup, lock: outputLock) {
+            capturedOutput = $0
+        }
+        captureData(from: errorPipe, group: outputReadGroup, lock: outputLock) {
+            capturedErrorOutput = $0
         }
 
         process.executableURL = URL(fileURLWithPath: displayplacerPath)
         process.arguments = arguments
         process.standardInput = nullFileHandle()
-        process.standardOutput = outputPipe ?? nullFileHandle()
-        process.standardError = nullFileHandle()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
         process.terminationHandler = { _ in
             completed.signal()
         }
@@ -105,8 +100,25 @@ enum DisplayplacerService {
         _ = outputReadGroup.wait(timeout: .now() + 1)
         outputLock.lock()
         let output = capturedOutput
+        let errorOutput = capturedErrorOutput
         outputLock.unlock()
-        return ProcessResult(output: output, terminationStatus: process.terminationStatus)
+        return ProcessResult(output: output, errorOutput: errorOutput, terminationStatus: process.terminationStatus)
+    }
+
+    private static func captureData(
+        from pipe: Pipe,
+        group: DispatchGroup,
+        lock: NSLock,
+        assign: @escaping (Data) -> Void
+    ) {
+        group.enter()
+        DispatchQueue.global(qos: .utility).async {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            lock.lock()
+            assign(data)
+            lock.unlock()
+            group.leave()
+        }
     }
 
     private static func parseDisplayplacerCommand(_ commandLine: String) -> [String] {
@@ -165,9 +177,34 @@ enum DisplayplacerService {
             userInfo: [NSLocalizedDescriptionKey: message]
         )
     }
+
+    private static func failureMessage(_ prefix: String, result: ProcessResult) -> String {
+        let lines = result.diagnosticText
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { uniqueLines, line in
+                if !uniqueLines.contains(line) {
+                    uniqueLines.append(line)
+                }
+            }
+
+        guard !lines.isEmpty else {
+            return "\(prefix) with exit code \(result.terminationStatus)."
+        }
+
+        return "\(prefix): \(lines.prefix(2).joined(separator: " "))"
+    }
 }
 
 private struct ProcessResult {
     let output: Data
+    let errorOutput: Data
     let terminationStatus: Int32
+
+    var diagnosticText: String {
+        [output, errorOutput]
+            .compactMap { String(data: $0, encoding: .utf8) }
+            .joined(separator: "\n")
+    }
 }

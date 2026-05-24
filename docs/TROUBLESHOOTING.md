@@ -49,6 +49,11 @@ arrangement:
 2. Open `Configure Presets...`.
 3. Save the preset again with the same name and confirm replacement.
 
+If the menu shows an error like `Unable to find screen ...`, the saved preset
+references a display id that macOS no longer exposes. That usually means the
+display was reconnected through a different port, dock, adapter, or input path.
+Re-saving the preset updates the stored ids.
+
 ## Open at Login Is Disabled
 
 Open at Login is only available when the app is running from `/Applications` or
