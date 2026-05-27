@@ -15,7 +15,7 @@ If you use a menu bar manager such as Thaw, Bartender, Ice, or Hidden Bar, check
 that the item is not hidden. The stable menu bar identifier is:
 
 ```text
-com.ryanmcconville.display-presets.menu:DisplayPresetsStatusItem
+io.github.rymc.display-presets:DisplayPresetsStatusItem
 ```
 
 If the app is running but no item is visible, quit and reopen it:

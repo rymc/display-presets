@@ -2,24 +2,37 @@ import AppKit
 import Foundation
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private enum StatusItemPlacement {
+        static let autosaveName = "DisplayPresetsStatusItem"
+        static let preferredPositionKey = "NSStatusItem Preferred Position \(autosaveName)"
+        static let visibilityKey = "NSStatusItem Visible \(autosaveName)"
+    }
+
+    private var statusItem: NSStatusItem?
     private let menu = NSMenu()
     private var profiles: [Profile] = []
     private var selectedProfileName: String?
     private var menuHeaderTitle = "Loading..."
+    private var statusButtonTitle = AppConstants.appName
     private var isSwitching = false
     private var needsProfileReload = false
     private var profileLoadGeneration = 0
+    private var pendingStatusItemRefresh: DispatchWorkItem?
     private lazy var profilesWindow = ProfilesWindowController { [weak self] in
         self?.reloadProfiles()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem.autosaveName = "DisplayPresetsStatusItem"
-        configureStatusItem()
         menu.delegate = self
-        statusItem.menu = menu
         rebuildMenu()
+        installStatusItem()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
 
         let shouldForceConfiguration = ProcessInfo.processInfo.arguments.contains("--configure")
         reloadProfiles(openConfigurationIfEmpty: !shouldForceConfiguration)
@@ -29,6 +42,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.showConfigurationWindow()
             }
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showConfigurationWindow()
+        return false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        resetStatusItemPlacement()
+    }
+
+    @objc private func screenParametersChanged() {
+        scheduleStatusItemRefresh()
     }
 
     @objc private func applyProfile(_ sender: NSMenuItem) {
@@ -138,8 +164,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func installStatusItem() {
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+
+        resetStatusItemPlacement()
+
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.autosaveName = StatusItemPlacement.autosaveName
+        statusItem.isVisible = true
+        self.statusItem = statusItem
+        configureStatusItem()
+        statusItem.menu = menu
+        pendingStatusItemRefresh = nil
+    }
+
+    private func resetStatusItemPlacement() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: StatusItemPlacement.preferredPositionKey)
+        defaults.set(true, forKey: StatusItemPlacement.visibilityKey)
+    }
+
+    private func scheduleStatusItemRefresh() {
+        pendingStatusItemRefresh?.cancel()
+
+        let refresh = DispatchWorkItem { [weak self] in
+            self?.installStatusItem()
+        }
+        pendingStatusItemRefresh = refresh
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: refresh)
+    }
+
     private func configureStatusItem() {
-        guard let button = statusItem.button else { return }
+        guard let button = statusItem?.button else { return }
 
         if let image = NSImage(systemSymbolName: "display.2", accessibilityDescription: AppConstants.appName) {
             image.isTemplate = true
@@ -147,11 +205,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.imagePosition = .imageOnly
             button.title = ""
         } else {
-            button.title = "Display"
+            button.title = statusButtonTitle
         }
 
-        button.toolTip = AppConstants.appName
-        button.setAccessibilityLabel(AppConstants.appName)
+        button.toolTip = "\(AppConstants.appName): \(statusButtonTitle)"
+        button.setAccessibilityLabel("\(AppConstants.appName): \(statusButtonTitle)")
     }
 
     private func rebuildMenu() {
@@ -239,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             selectedProfileName = profile.name
             ProfileStore.saveState(profile.name)
             setStatus(profile.name, "Current Preset: \(profile.name)")
+            scheduleStatusItemRefresh()
         case .failure(let error):
             setStatus("Error", "Error: \(error.localizedDescription)")
         }
@@ -253,7 +312,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setStatus(_ buttonTitle: String, _ menuTitle: String) {
         menuHeaderTitle = menuTitle
-        guard let button = statusItem.button else { return }
+        statusButtonTitle = buttonTitle
+        guard let button = statusItem?.button else { return }
 
         if button.image == nil {
             button.title = buttonTitle

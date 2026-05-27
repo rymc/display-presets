@@ -1,7 +1,7 @@
 APP_NAME := Display Presets
 LEGACY_APP_NAME := Display Mode Switch
 EXECUTABLE := DisplayPresets
-BUNDLE_IDENTIFIER := com.ryanmcconville.display-presets.menu
+BUNDLE_IDENTIFIER := io.github.rymc.display-presets
 VERSION := 0.1.0
 BUILD_DIR := build
 APP_DIR := $(BUILD_DIR)/$(APP_NAME).app

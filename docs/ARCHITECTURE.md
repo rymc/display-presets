@@ -33,16 +33,18 @@ That migration is local only and does not delete user preset data.
 
 ## Menu Bar Identity
 
-The app uses bundle id `com.ryanmcconville.display-presets.menu` and status item
+The app uses bundle id `io.github.rymc.display-presets` and status item
 autosave name `DisplayPresetsStatusItem`. Menu bar managers can use the combined
 identifier:
 
 ```text
-com.ryanmcconville.display-presets.menu:DisplayPresetsStatusItem
+io.github.rymc.display-presets:DisplayPresetsStatusItem
 ```
 
-That stable identity avoids the generic `Item-0` menu bar identifier that can be
-hard for menu bar managers to track reliably.
+Display Presets clears the saved `NSStatusItem` preferred-position key before
+creating or recreating the item. That keeps a stable identity for tools such as
+Thaw, but lets AppKit place the item in the current menu bar coordinate space
+after the app changes the display layout.
 
 ## Dependency Boundary
 

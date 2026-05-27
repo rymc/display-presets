@@ -5,7 +5,7 @@
   <key>CFBundleExecutable</key>
   <string>DisplayPresets</string>
   <key>CFBundleIdentifier</key>
-  <string>com.ryanmcconville.display-presets.menu</string>
+  <string>io.github.rymc.display-presets</string>
   <key>CFBundleName</key>
   <string>Display Presets</string>
   <key>CFBundleDisplayName</key>
